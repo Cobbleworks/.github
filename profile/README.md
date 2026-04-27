@@ -1,53 +1,47 @@
-# 🪨 Cobbleworks
+<h1 align="center">Cobbleworks</h1>
+<p align="center">
+  <b>Open-source Minecraft server plugins for PaperMC and Spigot.</b><br>
+  <b>Gameplay mechanics, world tools, admin utilities, and quality-of-life enhancements.</b>
+</p>
+<p align="center">
+  <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License">&nbsp;&nbsp;<img src="https://img.shields.io/badge/Java-17+-orange?style=flat-square" alt="Java Version">&nbsp;&nbsp;<img src="https://img.shields.io/badge/Minecraft-1.19+-green?style=flat-square" alt="Minecraft Version">&nbsp;&nbsp;<img src="https://img.shields.io/badge/Platform-Spigot%2FPaper-yellow?style=flat-square" alt="Platform">&nbsp;&nbsp;<img src="https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square" alt="Status">
+</p>
 
-> **Minecraft plugins for [PaperMC](https://papermc.io/) — built with variety in mind.**
+**Cobbleworks** is an open-source Minecraft plugin organization delivering gameplay mechanics, world tools, admin utilities, and quality-of-life improvements for PaperMC and Spigot servers. All plugins are independently versioned, production-ready, and released under the MIT License. Whether you are running a survival, creative, or custom game mode server, Cobbleworks plugins are designed to integrate seamlessly into any server environment.
 
-Cobbleworks is an open collection of Paper plugins spanning gameplay mechanics, world tools, admin utilities, and quality-of-life improvements. Whether you're running a survival server, a creative build server, or something in between, there's likely something here for you.
-
----
-
-## 🔌 Plugin Collection
+### **Plugin Collection**
 
 | Plugin | Description |
 |---|---|
-| **Piston-Crusher** | Piston-based block crushing with whitelist and output multipliers |
-| **NPC-Item-Pickup-And-Drop** | Citizens NPC item pickup, inventory, and thief-mode behavior |
-| **Map-Revealer** | Reveal full maps with color schemes and map locking |
-| **Hookshot-Plugin** | Turns the fishing rod into a grappling hook |
-| **Area-Rewind** | Restore a selected area to its former states — with history, command blocks, and a GUI |
-| **Advanced-Achievements** | Custom achievements with rewards, progress tracking, and persistence |
-| **Wireless-Redstone** | Wirelessly sync redstone lamps, bulbs, chests, and more via tools and GUI |
-| **Super-Enchantments** | High-level vanilla and custom enchantments |
-| **Rail-Boost** | Enhanced minecart speed, storage, pickup, and advanced rail features |
-| **Power-Mining-Tools** | *(and more...)* |
+| [**Advanced-Achievements**](https://github.com/Cobbleworks/Advanced-Achievements) | Comprehensive achievement system with custom rewards, progress tracking, and database integration |
+| [**Area-Rewind**](https://github.com/Cobbleworks/Area-Rewind) | Advanced area protection and backup system with undo/redo history, automatic backups, and GUI management |
+| [**Hookshot-Plugin**](https://github.com/Cobbleworks/Hookshot-Plugin) | Transforms fishing rods into grappling hooks with configurable range, pull speed, and per-player settings |
+| [**Map-Revealer**](https://github.com/Cobbleworks/Map-Revealer) | Automatically reveals entire maps with customizable color schemes and map locking functionality |
+| [**NPC-Item-Pickup-And-Drop**](https://github.com/Cobbleworks/NPC-Item-Pickup-And-Drop) | Citizens NPC item pickup, inventory management, and thief-mode behavior with configurable targeting |
+| [**Piston-Crusher**](https://github.com/Cobbleworks/Piston-Crusher) | Automated block crushing system using pistons with configurable material whitelist and output multipliers |
+| [**Power-Mining-Tools**](https://github.com/Cobbleworks/Power-Mining-Tools) | Mining enhancements including mounted mining, ore scanner, magnetic hoppers, escape ropes, and auto-smelting |
+| [**Rail-Boost**](https://github.com/Cobbleworks/Rail-Boost) | Enhanced minecart system with configurable speed, auto-pickup, onboard storage, and advanced transportation |
+| [**Super-Enchantments**](https://github.com/Cobbleworks/Super-Enchantments) | Enchantment system allowing enchantment levels beyond vanilla limits, supporting levels 1–255 |
+| [**Wireless-Redstone**](https://github.com/Cobbleworks/Wireless-Redstone) | Wirelessly link copper bulbs, redstone lamps, and containers that sync their states across any distance |
 
----
+### **Getting Started**
 
-## 🛠️ Built For
+1. Navigate to the repository of the plugin you want to use.
+2. Download the latest `.jar` file from the repository's **Releases** page.
+3. Place the `.jar` into your server's `plugins/` folder.
+4. Restart the server to generate the default configuration files.
+5. Refer to the plugin's `README.md` for the full command reference, permission nodes, and configuration options.
 
-- **Server:** [PaperMC](https://papermc.io/) (and forks)
-- **Language:** Java
-- All plugins are self-contained and designed to be drop-in compatible
+### **Platform Support**
 
----
+- **Server Software:** Spigot, Paper, Purpur, CraftBukkit
+- **Minecraft Versions:** 1.19 and above
+- **Java Requirements:** Java 17 or higher
 
-## 🚀 Getting Started
+### **Contributing**
 
-1. Download the `.jar` for the plugin you want from its repository's [Releases]() page.
-2. Drop it into your server's `plugins/` folder.
-3. Restart your server.
-4. Configure via the generated config files as needed.
+Contributions are welcome across all plugin repositories. If you encounter a bug or have a feature request, open an issue or submit a pull request directly in the respective repository. Please follow the existing code style and include a clear description of your changes.
 
-Each plugin has its own README with full configuration docs, permissions, and commands.
+### **License**
 
----
-
-## 🤝 Contributing
-
-Found a bug? Have a feature idea? Contributions are welcome on any individual plugin repo — open an issue or a pull request.
-
----
-
-## 📜 License
-
-Each plugin is licensed individually — check the respective repository for details.
+All plugins are released under the **MIT License**. See the `LICENSE` file in each repository for full details.
