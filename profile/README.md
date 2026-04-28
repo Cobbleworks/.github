@@ -22,6 +22,7 @@
 | [**Power-Mining-Tools**](https://github.com/Cobbleworks/Power-Mining-Tools) | Mining enhancements including mounted mining, ore scanner, magnetic hoppers, escape ropes, and auto-smelting |
 | [**Rail-Boost**](https://github.com/Cobbleworks/Rail-Boost) | Enhanced minecart system with configurable speed, auto-pickup, onboard storage, and advanced transportation |
 | [**Super-Enchantments**](https://github.com/Cobbleworks/Super-Enchantments) | Enchantment system allowing enchantment levels beyond vanilla limits, supporting levels 1–255 |
+| [**Useful-Autocrafter**](https://github.com/Cobbleworks/Useful-Autocrafter) | Ensures autocrafters never drop below 1 item per slot, allowing continous crafting |
 | [**Wireless-Redstone**](https://github.com/Cobbleworks/Wireless-Redstone) | Wirelessly link copper bulbs, redstone lamps, and containers that sync their states across any distance |
 
 ### **Getting Started**
