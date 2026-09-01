@@ -1,0 +1,369 @@
+name: Reusable Plugin Release
+
+on:
+  workflow_call:
+    inputs:
+      display-name:
+        description: Human-readable plugin name used in the release title and notes
+        required: true
+        type: string
+      publish:
+        description: Publish a release after validation and artifact comparison
+        required: false
+        default: true
+        type: boolean
+      extra-runtime-paths:
+        description: Space-separated runtime files outside src/main and pom.xml
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Validate and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: plugin-release-${{ github.repository }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Build and test
+        run: mvn clean verify -B --no-transfer-progress
+
+      - name: Find comparison release
+        if: inputs.publish
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          current_version="$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)"
+          current_version="${current_version%-SNAPSHOT}"
+          echo "current-version=$current_version" >> "$GITHUB_OUTPUT"
+
+          if base_tag="$(gh release view --json tagName --jq .tagName 2>/dev/null)" \
+              && [[ -n "$base_tag" ]] \
+              && git rev-parse --verify --quiet "refs/tags/$base_tag" >/dev/null; then
+            echo "tag=$base_tag" >> "$GITHUB_OUTPUT"
+            echo "has-release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "has-release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compare packaged plugin with latest release
+        if: inputs.publish && steps.baseline.outputs.has-release == 'true'
+        id: compare
+        env:
+          BASE_TAG: ${{ steps.baseline.outputs.tag }}
+          EXTRA_RUNTIME_PATHS: ${{ inputs.extra-runtime-paths }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_dir="$RUNNER_TEMP/release-baseline"
+          git worktree add --detach "$base_dir" "$BASE_TAG"
+
+          for runtime_path in $EXTRA_RUNTIME_PATHS; do
+            if [[ -f "$runtime_path" && ! -f "$base_dir/$runtime_path" ]]; then
+              mkdir -p "$base_dir/$(dirname "$runtime_path")"
+              cp "$runtime_path" "$base_dir/$runtime_path"
+            fi
+          done
+
+          mvn versions:set -DnewVersion=0.0.0-comparison \
+            -DgenerateBackupPoms=false -B --no-transfer-progress
+          mvn clean package -Dmaven.compiler.debug=false -DskipTests \
+            -B --no-transfer-progress
+
+          (
+            cd "$base_dir"
+            mvn versions:set -DnewVersion=0.0.0-comparison \
+              -DgenerateBackupPoms=false -B --no-transfer-progress
+            mvn clean package -Dmaven.compiler.debug=false -DskipTests \
+              -B --no-transfer-progress
+          )
+
+          current_jar="$(find target -maxdepth 1 -type f -name '*.jar' \
+            ! -name 'original-*' ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
+            -print -quit)"
+          baseline_jar="$(find "$base_dir/target" -maxdepth 1 -type f -name '*.jar' \
+            ! -name 'original-*' ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
+            -print -quit)"
+
+          if [[ -z "$current_jar" || -z "$baseline_jar" ]]; then
+            echo "A comparison artifact could not be located; treating this as a plugin change."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          python3 - "$current_jar" "$baseline_jar" "$GITHUB_OUTPUT" <<'PY'
+          import hashlib
+          import sys
+          import zipfile
+
+          def payload_digest(path: str) -> str:
+              digest = hashlib.sha256()
+              with zipfile.ZipFile(path) as archive:
+                  entries = sorted(
+                      entry for entry in archive.namelist()
+                      if not entry.endswith('/') and not entry.upper().startswith('META-INF/')
+                  )
+                  for entry in entries:
+                      digest.update(entry.encode('utf-8'))
+                      digest.update(b'\0')
+                      digest.update(archive.read(entry))
+                      digest.update(b'\0')
+              return digest.hexdigest()
+
+          current = payload_digest(sys.argv[1])
+          baseline = payload_digest(sys.argv[2])
+          changed = current != baseline
+          print(f'Current payload:  {current}')
+          print(f'Released payload: {baseline}')
+          with open(sys.argv[3], 'a', encoding='utf-8') as output:
+              output.write(f'changed={str(changed).lower()}\n')
+          PY
+
+      - name: Mark first release as changed
+        if: inputs.publish && steps.baseline.outputs.has-release == 'false'
+        id: initial
+        shell: bash
+        run: echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Determine release version
+        if: >-
+          inputs.publish &&
+          (steps.compare.outputs.changed == 'true' || steps.initial.outputs.changed == 'true')
+        id: version
+        env:
+          BASE_TAG: ${{ steps.baseline.outputs.tag }}
+          CURRENT_VERSION: ${{ steps.baseline.outputs.current-version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - "$BASE_TAG" "$CURRENT_VERSION" "$GITHUB_OUTPUT" <<'PY'
+          import re
+          import subprocess
+          import sys
+
+          base_tag, current_version, output_path = sys.argv[1:]
+          semver = re.compile(r'^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$')
+          match = semver.match(base_tag) if base_tag else None
+
+          if match:
+              major, minor, patch = map(int, match.groups())
+              commit_range = f'{base_tag}..HEAD'
+              messages = subprocess.check_output(
+                  ['git', 'log', '--format=%s%n%b%x00', commit_range], text=True
+              ).lower()
+              if 'breaking change:' in messages or re.search(r'^[a-z]+(?:\([^)]*\))?!:', messages, re.M):
+                  major, minor, patch = major + 1, 0, 0
+              elif re.search(r'^feat(?:\([^)]*\))?:', messages, re.M):
+                  minor, patch = minor + 1, 0
+              else:
+                  patch += 1
+          else:
+              initial = semver.match(current_version)
+              major, minor, patch = map(int, initial.groups()) if initial else (1, 0, 0)
+
+          version = f'{major}.{minor}.{patch}'
+          with open(output_path, 'a', encoding='utf-8') as output:
+              output.write(f'value={version}\n')
+              output.write(f'tag=v{version}\n')
+          print(f'Next release: v{version}')
+          PY
+
+      - name: Build release artifact
+        if: steps.version.outputs.tag != ''
+        id: artifact
+        env:
+          DISPLAY_NAME: ${{ inputs.display-name }}
+          VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mvn versions:set -DnewVersion="$VERSION" \
+            -DgenerateBackupPoms=false -B --no-transfer-progress
+          mvn clean verify -B --no-transfer-progress
+
+          jar_path="$(find target -maxdepth 1 -type f -name '*.jar' \
+            ! -name 'original-*' ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
+            -print -quit)"
+          if [[ -z "$jar_path" ]]; then
+            echo "No release JAR was produced." >&2
+            exit 1
+          fi
+
+          safe_name="${DISPLAY_NAME// /-}"
+          mkdir -p release
+          release_path="release/${safe_name}-${VERSION}.jar"
+          cp "$jar_path" "$release_path"
+          echo "path=$release_path" >> "$GITHUB_OUTPUT"
+
+      - name: Write release notes
+        if: steps.version.outputs.tag != ''
+        env:
+          BASE_TAG: ${{ steps.baseline.outputs.tag }}
+          DISPLAY_NAME: ${{ inputs.display-name }}
+          REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - "$BASE_TAG" "$DISPLAY_NAME" "$REPOSITORY" "$VERSION" <<'PY'
+          from collections import defaultdict
+          from pathlib import Path
+          import re
+          import subprocess
+          import sys
+
+          base_tag, display_name, repository, version = sys.argv[1:]
+          commit_range = f'{base_tag}..HEAD' if base_tag else 'HEAD'
+
+          subjects = subprocess.check_output(
+              ['git', 'log', '--format=%s', commit_range], text=True
+          ).splitlines()
+          changes = defaultdict(list)
+          ignored_types = {'build', 'chore', 'ci', 'docs', 'style', 'test'}
+          type_sections = {
+              'feat': 'Added',
+              'fix': 'Fixed',
+              'perf': 'Performance',
+              'refactor': 'Changed',
+              'revert': 'Changed',
+          }
+
+          for subject in subjects:
+              conventional = re.match(r'^([a-z]+)(?:\([^)]+\))?!?:\s*(.+)$', subject, re.I)
+              if conventional:
+                  change_type, summary = conventional.groups()
+                  change_type = change_type.lower()
+                  if change_type in ignored_types:
+                      continue
+                  section = type_sections.get(change_type, 'Changed')
+              else:
+                  summary = subject
+                  section = 'Changed'
+              summary = summary.strip().rstrip('.')
+              if summary and summary.lower() not in {item.lower() for item in changes[section]}:
+                  changes[section].append(summary)
+
+          diff_args = ['git', 'diff', '--name-status']
+          if base_tag:
+              diff_args.append(f'{base_tag}..HEAD')
+          else:
+              diff_args.append('HEAD^' if subprocess.call(
+                  ['git', 'rev-parse', '--verify', 'HEAD^'],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+              ) == 0 else 'HEAD')
+          diff_args.extend(['--', 'src/main', 'pom.xml'])
+          file_changes = subprocess.check_output(diff_args, text=True).splitlines()
+
+          component_changes = defaultdict(list)
+          for line in file_changes:
+              parts = line.split('\t')
+              if len(parts) < 2:
+                  continue
+              status, path = parts[0][0], parts[-1]
+              if path.endswith('.java'):
+                  component = Path(path).stem
+                  section = {'A': 'Added', 'D': 'Removed'}.get(status, 'Changed components')
+                  component_changes[section].append(f'`{component}`')
+              elif path == 'pom.xml':
+                  component_changes['Dependencies and build'].append('Updated the runtime dependency or build definition')
+              elif path.startswith('src/main/resources/'):
+                  name = Path(path).name
+                  section = {'A': 'Added', 'D': 'Removed'}.get(status, 'Configuration')
+                  verb = {'A': 'Added', 'D': 'Removed'}.get(status, 'Updated')
+                  component_changes[section].append(f'{verb} `{name}`')
+
+          notes = [
+              f'{display_name} {version} is an automatic release containing verified changes to the packaged plugin.'
+          ]
+          order = ['Added', 'Changed', 'Fixed', 'Performance', 'Removed']
+          for section in order:
+              if changes[section]:
+                  notes.extend(['', f'### {section}', ''])
+                  notes.extend(f'- {item}' for item in changes[section])
+
+          for section in ['Added', 'Changed components', 'Configuration', 'Dependencies and build', 'Removed']:
+              items = component_changes[section]
+              if not items:
+                  continue
+              unique = list(dict.fromkeys(items))
+              if section in {'Added', 'Removed'} and changes[section]:
+                  heading = f'{section} components'
+              else:
+                  heading = section
+              notes.extend(['', f'### {heading}', ''])
+              if section == 'Changed components':
+                  rendered = ', '.join(unique[:20])
+                  suffix = f' and {len(unique) - 20} more' if len(unique) > 20 else ''
+                  notes.append(f'- Updated plugin components: {rendered}{suffix}.')
+              else:
+                  notes.extend(f'- {item}.' for item in unique[:20])
+                  if len(unique) > 20:
+                      notes.append(f'- {len(unique) - 20} additional files changed.')
+
+          if len(notes) == 1:
+              notes.extend(['', '### Changed', '', '- Updated the packaged plugin behavior.'])
+
+          notes.extend([
+              '',
+              f'**Note:** If you encounter any bugs or issues, please don\'t hesitate to open an '
+              f'[issue](https://github.com/{repository}/issues). For any questions or to start a discussion, '
+              f'feel free to initiate a [discussion](https://github.com/{repository}/discussions) on the GitHub repository.',
+              '',
+          ])
+          Path('release-notes.md').write_text('\n'.join(notes), encoding='utf-8')
+          PY
+
+      - name: Publish GitHub release
+        if: steps.version.outputs.tag != ''
+        env:
+          ARTIFACT: ${{ steps.artifact.outputs.path }}
+          DISPLAY_NAME: ${{ inputs.display-name }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$GITHUB_SHA" -m "$DISPLAY_NAME $VERSION"
+          git push origin "$TAG"
+          gh release create "$TAG" "$ARTIFACT" \
+            --title "$DISPLAY_NAME $VERSION" \
+            --notes-file release-notes.md \
+            --verify-tag
+
+      - name: Report unchanged plugin
+        if: >-
+          inputs.publish &&
+          steps.baseline.outputs.has-release == 'true' &&
+          steps.compare.outputs.changed == 'false'
+        run: echo "The packaged plugin is identical to the latest release; no release was created."
