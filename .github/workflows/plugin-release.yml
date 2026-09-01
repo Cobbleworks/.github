@@ -174,7 +174,7 @@ jobs:
               major, minor, patch = map(int, match.groups())
               commit_range = f'{base_tag}..HEAD'
               messages = subprocess.check_output(
-                  ['git', 'log', '--format=%s%n%b%x00', commit_range, '--', 'src/main', 'pom.xml'],
+                  ['git', 'log', '--no-merges', '--format=%s%n%b%x00', commit_range, '--', 'src/main', 'pom.xml'],
                   text=True,
               ).lower()
               if 'breaking change:' in messages or re.search(r'^[a-z]+(?:\([^)]*\))?!:', messages, re.M):
@@ -244,7 +244,7 @@ jobs:
           commit_range = f'{base_tag}..HEAD' if base_tag else 'HEAD'
 
           subjects = subprocess.check_output(
-              ['git', 'log', '--format=%s', commit_range, '--', 'src/main', 'pom.xml'],
+              ['git', 'log', '--no-merges', '--format=%s', commit_range, '--', 'src/main', 'pom.xml'],
               text=True,
           ).splitlines()
           changes = defaultdict(list)
