@@ -13,6 +13,12 @@
 
 **Cobbleworks** maintains independently versioned Minecraft server plugins covering gameplay systems, world tools, automation, transport, and administration. Check each repository for its exact Paper or Spigot version, Java requirement, and optional integrations before installation.
 
+<p align="center">
+  <a href="https://cobbleworks.github.io/"><strong>Explore the Cobbleworks website</strong></a>
+  &nbsp;&middot;&nbsp;
+  <a href="https://github.com/orgs/Cobbleworks/repositories"><strong>Browse all repositories</strong></a>
+</p>
+
 ### **Plugin Collection**
 
 | Plugin | Repository | Description |
