@@ -234,7 +234,7 @@ jobs:
           set -euo pipefail
 
           python3 - "$BASE_TAG" "$DISPLAY_NAME" "$REPOSITORY" "$VERSION" <<'PY'
-          from collections import defaultdict
+          from collections import Counter, defaultdict
           from pathlib import Path
           import re
           import subprocess
@@ -242,6 +242,47 @@ jobs:
 
           base_tag, display_name, repository, version = sys.argv[1:]
           commit_range = f'{base_tag}..HEAD' if base_tag else 'HEAD'
+
+          def unreleased_entries(ref=None):
+              try:
+                  if ref:
+                      text = subprocess.check_output(
+                          ['git', 'show', f'{ref}:CHANGELOG.md'], text=True, stderr=subprocess.DEVNULL
+                      )
+                  else:
+                      text = Path('CHANGELOG.md').read_text(encoding='utf-8')
+              except (OSError, subprocess.CalledProcessError):
+                  return defaultdict(list)
+
+              start = re.search(r'^##\s+\[?Unreleased\]?\s*$', text, re.I | re.M)
+              if not start:
+                  return defaultdict(list)
+              remainder = text[start.end():]
+              end = re.search(r'^##\s+', remainder, re.M)
+              block = remainder[:end.start()] if end else remainder
+
+              entries = defaultdict(list)
+              section = 'Changed'
+              for line in block.splitlines():
+                  heading = re.match(r'^###\s+(.+?)\s*$', line)
+                  if heading:
+                      section = heading.group(1).strip()
+                      continue
+                  bullet = re.match(r'^[-*]\s+(.+?)\s*$', line)
+                  if bullet:
+                      entries[section].append(bullet.group(1).strip())
+              return entries
+
+          current_changelog = unreleased_entries()
+          baseline_changelog = unreleased_entries(base_tag) if base_tag else defaultdict(list)
+          changelog_changes = defaultdict(list)
+          for section, entries in current_changelog.items():
+              previous = Counter(baseline_changelog.get(section, []))
+              for entry in entries:
+                  if previous[entry]:
+                      previous[entry] -= 1
+                  else:
+                      changelog_changes[section].append(entry)
 
           subjects = subprocess.check_output(
               ['git', 'log', '--no-merges', '--format=%s', commit_range, '--', 'src/main', 'pom.xml'],
@@ -257,20 +298,24 @@ jobs:
               'revert': 'Changed',
           }
 
-          for subject in subjects:
-              conventional = re.match(r'^([a-z]+)(?:\([^)]+\))?!?:\s*(.+)$', subject, re.I)
-              if conventional:
-                  change_type, summary = conventional.groups()
-                  change_type = change_type.lower()
-                  if change_type in ignored_types:
-                      continue
-                  section = type_sections.get(change_type, 'Changed')
-              else:
-                  summary = subject
-                  section = 'Changed'
-              summary = summary.strip().rstrip('.')
-              if summary and summary.lower() not in {item.lower() for item in changes[section]}:
-                  changes[section].append(summary)
+          if any(changelog_changes.values()):
+              for section, entries in changelog_changes.items():
+                  changes[section].extend(entries)
+          else:
+              for subject in subjects:
+                  conventional = re.match(r'^([a-z]+)(?:\([^)]+\))?!?:\s*(.+)$', subject, re.I)
+                  if conventional:
+                      change_type, summary = conventional.groups()
+                      change_type = change_type.lower()
+                      if change_type in ignored_types:
+                          continue
+                      section = type_sections.get(change_type, 'Changed')
+                  else:
+                      summary = subject
+                      section = 'Changed'
+                  summary = summary.strip().rstrip('.')
+                  if summary and summary.lower() not in {item.lower() for item in changes[section]}:
+                      changes[section].append(summary)
 
           diff_args = ['git', 'diff', '--name-status']
           if base_tag:
@@ -304,7 +349,8 @@ jobs:
           notes = [
               f'{display_name} {version} is an automatic release containing verified changes to the packaged plugin.'
           ]
-          order = ['Added', 'Changed', 'Fixed', 'Performance', 'Removed']
+          preferred_order = ['Added', 'Changed', 'Fixed', 'Performance', 'Security', 'Removed']
+          order = preferred_order + sorted(section for section in changes if section not in preferred_order)
           for section in order:
               if changes[section]:
                   notes.extend(['', f'### {section}', ''])
